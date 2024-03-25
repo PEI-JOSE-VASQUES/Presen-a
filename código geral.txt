@@ -1,0 +1,298 @@
+#include <Adafruit_Fingerprint.h>
+#include <WiFi.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+#include <time.h>
+#include <IOXhop_FirebaseESP32.h>
+
+const char *ssid = "Notebook Isaque Samir";
+const char *passwordr = "12345678";
+const char *host = "jv-presente-default-rtdb.firebaseio.com";
+const char *auth = "rzB4LE4Y7qGhTfKSL81GBO4rufRYSxs46VSF4nnI";
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "a.ntp.br", -3 * 3600, 60000);
+
+int suaVariavelDeComparacao = 1;
+String ultimoHorario = "";
+bool horarioDefinido = false;
+bool historicoDefinido = false;
+int diaAtual;
+int mesAtual;
+int anoAtual;
+String dataAtualFixa;
+
+const uint32_t password = 0x0;
+Adafruit_Fingerprint fingerprintSensor = Adafruit_Fingerprint(&Serial2, password);
+
+void setup() {
+  Serial.begin(9600);
+  Serial.println("Conectando ao WiFi...");
+  WiFi.begin(ssid, passwordr);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("WiFi conectado");
+  timeClient.begin();
+  Firebase.begin(host, auth);
+  setupFingerprintSensor();
+}
+
+void setupFingerprintSensor() {
+  fingerprintSensor.begin(57600);
+  if (!fingerprintSensor.verifyPassword()) {
+    Serial.println(F("Não foi possível conectar ao sensor. Verifique a senha ou a conexão"));
+    while (true);
+  }
+}
+void printStoredFingerprintsCount();
+void deleteFingerprint();
+void emptyDatabase();
+
+void loop() {
+  printMenu();
+
+
+
+  
+  while(Firebase.getString("/ponto_geral/chaveT") == "ler"){
+        checkFingerprint();
+Serial.println("ler confirmado!");
+}
+while(Firebase.getString("/ponto_geral/chaveT") == "cadastrar"){
+storeFingerprint();
+Serial.println("cadastrar confirmado!");
+}
+while(Firebase.getString("/ponto_geral/chaveT") == "deletar"){
+      deleteFingerprint();
+Serial.println("deletar confirmado!");
+}
+while(Firebase.getString("/ponto_geral/chaveT") == "apagarG"){
+      emptyDatabase();
+Serial.println("deletar confirmado!");
+}
+
+ /*
+  String command = getCommand();
+  int i = command.toInt();
+
+  switch (i) {
+    case 1:
+      storeFingerprint();
+      break;
+    case 2:
+      checkFingerprint();
+      break;
+    case 3:
+      printStoredFingerprintsCount();
+      break;
+    case 4:
+      deleteFingerprint();
+      break;
+    case 5:
+      emptyDatabase();
+      break;
+    default:
+      Serial.println(F("Opção inválida"));
+      break;
+  
+ }
+ */
+  delay(1);
+}
+
+void printMenu() {
+  Serial.println();
+  Serial.println(F("Digite um dos números do menu abaixo"));
+  Serial.println(F("1 - Cadastrar digital"));
+  Serial.println(F("2 - Verificar digital"));
+  Serial.println(F("3 - Mostrar quantidade de digitais cadastradas"));
+  Serial.println(F("4 - Apagar digital em uma posição"));
+  Serial.println(F("5 - Apagar banco de digitais"));
+}
+
+String getCommand() {
+  while (!Serial.available()) delay(10);
+  return Serial.readStringUntil('\n');
+}
+
+void storeFingerprint() {
+  Serial.println(F("Qual a posição para guardar a digital? (1 a 149)"));
+  //String strLocation = getCommand();
+  int location = Firebase.getInt("/ponto_geral/adicionar");
+
+  if (location < 1 || location > 149) {
+    Serial.println(F("Posição inválida"));
+    return;
+  }
+  Serial.println(F("Encoste o dedo no sensor"));
+  while (fingerprintSensor.getImage() != FINGERPRINT_OK);
+  if (fingerprintSensor.image2Tz(1) != FINGERPRINT_OK) {
+    Serial.println(F("Erro image2Tz 1"));
+    return;
+  }
+  Serial.println(F("Tire o dedo do sensor"));
+  delay(2000);
+  while (fingerprintSensor.getImage() != FINGERPRINT_NOFINGER);
+  Serial.println(F("Encoste o mesmo dedo no sensor"));
+  while (fingerprintSensor.getImage() != FINGERPRINT_OK);
+  if (fingerprintSensor.image2Tz(2) != FINGERPRINT_OK) {
+    Serial.println(F("Erro image2Tz 2"));
+    return;
+  }
+  if (fingerprintSensor.createModel() != FINGERPRINT_OK) {
+    Serial.println(F("Erro createModel"));
+    return;
+  }
+  if (fingerprintSensor.storeModel(location) != FINGERPRINT_OK) {
+    Serial.println(F("Erro storeModel"));
+    return;
+  }
+        Firebase.setString("ponto_geral/chaveT", "ler");
+  Serial.println(F("Sucesso!!!"));
+}
+
+void checkFingerprint() {
+  Serial.println(F("Encoste o dedo no sensor"));
+  while (fingerprintSensor.getImage() != FINGERPRINT_OK);
+  if (fingerprintSensor.image2Tz() != FINGERPRINT_OK) {
+    Serial.println(F("Erro image2Tz"));
+    return;
+  }
+  if (fingerprintSensor.fingerFastSearch() != FINGERPRINT_OK) {
+    Serial.println(F("Digital não encontrada"));
+    return;
+  }
+  Serial.print(F("Digital encontrada com confiança de "));
+  Serial.print(fingerprintSensor.confidence);
+  Serial.print(F(" na posição "));
+  Serial.println(fingerprintSensor.fingerID);
+
+
+String ultimoHorario = ""; 
+bool horarioDefinido = false; 
+bool historicoDefinido = false; 
+
+
+ 
+timeClient.update();
+  String formattedTime = timeClient.getFormattedTime();
+  Serial.println(formattedTime);
+
+  // Obtendo o horário atual
+  time_t now = timeClient.getEpochTime();
+  struct tm *timeinfo = localtime(&now);
+  char horario[6]; // para armazenar "HH:MM"
+  strftime(horario, sizeof(horario), "%H:%M", timeinfo);
+
+  // Obtendo o dia, mês e ano atuais
+  diaAtual = timeinfo->tm_mday;
+  mesAtual = timeinfo->tm_mon + 1; // tm_mon começa de 0 (janeiro é 0)
+  anoAtual = timeinfo->tm_year + 1900; // tm_year conta os anos desde 1900
+
+  // Construindo dinamicamente o nome do nó que queremos verificar
+      int suaVariavelDeComparacao = fingerprintSensor.fingerID;
+  String alunoNode = "/ALUNOS-NA-ESCOLA/A" + String(suaVariavelDeComparacao);
+
+  // Verificando se o nó existe no Firebase
+  // Verificando se o nó existe no Firebase
+  if (!Firebase.getBool(alunoNode + "/existe:")) {
+    // Obtendo o nome do aluno correspondente ao número do aluno
+    String nomeAluno = Firebase.getString("/ALUNOS-NO-SISTEMA/A" + String(suaVariavelDeComparacao) + "/Nome");
+    String nomeRA = Firebase.getString("/ALUNOS-NO-SISTEMA/A" + String(suaVariavelDeComparacao) + "/Serie");
+    String nomeSerie = Firebase.getString("/ALUNOS-NO-SISTEMA/A" + String(suaVariavelDeComparacao) + "/RA");
+
+    // Verifica se o nó "horario:" já foi definido
+    if (!horarioDefinido) {
+      // Definindo o valor de "horario" apenas se for a primeira vez
+      String horarioString = String(horario);
+      Firebase.setString("ALUNOS-NA-ESCOLA/" + nomeAluno + "/horario:", horarioString);
+
+      // Registrando a adição do nó com o nome do aluno
+      Serial.print("Nó adicionado com sucesso para o aluno ");
+      Serial.println(nomeAluno);
+      Serial.println("RA: " + nomeRA);
+      Serial.println("Serie: " + nomeSerie);
+      Serial.println("Horário: " + horarioString);
+
+      // Atualizando o último horário registrado
+      ultimoHorario = horarioString;
+      horarioDefinido = true;
+    }
+
+    // Definindo que o nó existe no Firebase
+    Firebase.setBool("ALUNOS-NA-ESCOLA/" + nomeAluno + "/existe:", true);
+    Firebase.setString("ALUNOS-NA-ESCOLA/" + nomeAluno + "/RA:", nomeRA);
+    Firebase.setString("ALUNOS-NA-ESCOLA/" + nomeAluno + "/Serie:", nomeSerie);
+
+    // Verificando se o nó "Historico" já foi definido
+    if (!historicoDefinido) {
+      // Definindo o nó de histórico apenas se for a primeira vez
+      Firebase.setString("Historico/", ""); // Criar o nó "Historico"
+      historicoDefinido = true;
+    }
+
+    // Verifica se a data atual fixa já foi definida
+    if (dataAtualFixa == "") {
+      // Constrói a string fixa da data atual
+      dataAtualFixa = String(diaAtual) + "-" + String(mesAtual) + "-" + String(anoAtual);
+
+      // Verifica se a data atual já existe no histórico
+      if (!Firebase.getBool("Historico/" + dataAtualFixa + "/existe")) {
+        // Adiciona a nova data ao histórico
+        Firebase.setBool("Historico/" + dataAtualFixa + "/existe", true);
+      }
+    }
+
+    // Adicionando registro ao histórico usando a data atual fixa
+    Firebase.setString("Historico/" + dataAtualFixa + "/" + nomeAluno, nomeRA);
+  }
+
+}
+
+void printStoredFingerprintsCount() {
+  fingerprintSensor.getTemplateCount();
+  Serial.print(F("Digitais cadastradas: "));
+  Serial.println(fingerprintSensor.templateCount);
+}
+/////////////////////////////
+////////////////////////////
+////////////////////////////
+void deleteFingerprint() {
+  Serial.println(F("Qual a posição para apagar a digital? (1 a 149)"));
+  //String strLocation = getCommand();
+  int location = Firebase.getInt("/ponto_geral/apagar");
+
+  
+  if (location < 1 || location > 149) {
+    Serial.println(F("Posição inválida"));
+    return;
+  }
+  if (fingerprintSensor.deleteModel(location) != FINGERPRINT_OK) {
+    Serial.println(F("Erro ao apagar digital"));
+  }
+  else {
+            Firebase.setString("ponto_geral/chaveT", "ler");
+    Serial.println(F("Digital apagada com sucesso!!!"));
+  }
+}
+
+void emptyDatabase() {
+  Serial.println(F("Tem certeza? (s/N)"));
+  String command = "S";
+command.toUpperCase();
+  if (true) {
+    Serial.println(F("Apagando banco de digitais..."));
+    if (fingerprintSensor.emptyDatabase() != FINGERPRINT_OK) {
+      Serial.println(F("Erro ao apagar banco de digitais"));
+    }
+    else {
+              Firebase.setString("ponto_geral/chaveT", "ler");
+      Serial.println(F("Banco de digitais apagado com sucesso!!!"));
+    }
+  }
+  else {
+    Serial.println(F("Cancelado"));
+  }
+}
